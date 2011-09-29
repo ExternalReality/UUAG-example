@@ -12,23 +12,23 @@ import Statistics.Sample
 {
 data ResponseMetric = ResponseMetric { 
                                        responseUrl       :: URL,      --The URL that generated the response
-                                       timeInterval       :: Integer,  --The greatest time stamp in the interval 
-                                       responseMean   :: Double,   --The mean response time of interval
-                                       responseMin      :: Double,   --The min response time of interval
-                                       responseMax     :: Double   --The maximum response time of interval
+                                       timeInterval      :: Integer,  --The greatest time stamp in the interval 
+                                       responseMean      :: Double,   --The mean response time of interval
+                                       responseMin       :: Double,   --The min response time of interval
+                                       responseMax       :: Double   --The maximum response time of interval
                                        --percentile80th  :: Double,   --The 80th percentile of the cumulative intervals
                                        --percentile98th  :: Double    --The 98th percentile of the cumulative intervals
                                      } deriving (Show) 
 }
 
-TYPE ResponseGroup                              = [Response]
+TYPE ResponseGroup                    = [Response]
 TYPE ResponsesGroupedByTimeInterval   = [ResponseGroup]
-TYPE ResponseGroupsMappedByURL       = MAP {URL} ResponsesGroupedByTimeInterval
+TYPE ResponseGroupsMappedByURL        = MAP {URL} ResponsesGroupedByTimeInterval
 
 ATTR ResponseGroupsMappedByURL [ || responseMetrics USE 
-                                                       { (\a b -> a.resultingMetricList ++ b.resultingMetricList } 
-                                                       { [] } 
-                                                     : {[ResponseMetric]} 
+                                 { (\a b -> a.resultingMetricList ++ b.resultingMetricList } 
+                                 { [] } 
+                                 : {[ResponseMetric]} 
                                ]
 
 SEM ResponseGroupsMappedByURL
@@ -38,7 +38,7 @@ SEM ResponseGroupsMappedByURL
          lhs.responseMetrics               = @val.resultingMetricList 
 
 ATTR ResponsesGroupedByTimeInterval [ vectorAccumulator            : {V.Vector Double}
-                                      responseGroupURL             : {URL}              |responseMetricAccumulator    : {[ResponseMetric]} | 
+                                      responseGroupURL             : {URL} |responseMetricAccumulator    : {[ResponseMetric]} | 
                                       resultingMetricList          : {[ResponseMetric]} 
                                     ]  
     
@@ -55,21 +55,21 @@ SEM ResponsesGroupedByTimeInterval
  | Nil lhs.resultingMetricList = @lhs.responseMetricAccumulator 
                          
 
-SEM ResponsesGroupedByTimeInterval                          -- Percentiles and mean calculation semantics 
+SEM ResponsesGroupedByTimeInterval   -- Percentiles and mean calculation semantics 
  | Cons --hd.c80thPercentile    = _80thPercentile @loc.vector
         --hd.c98thPercentile    = _98thPercentile @loc.vector
         hd.meanResponseTime   = mean @hd.responseTimeVector
         tl.vectorAccumulator  = @loc.vector
         loc.vector            = @lhs.vectorAccumulator V.++ @hd.responseTimeVector
 
-ATTR ResponseGroup [    | --c80thPercentile                               : Double  
-                          --c98thPercentile                                            : Double 
-                          meanResponseTime                                       : Double
-                          responseGroupURL                                        : URL     -- Each response in the list has a common url  
-                        | latestTimeStamp      USE { max }   { error "empty list" }  : Integer 
+ATTR ResponseGroup [    | --c80thPercentile                                         : Double  
+                          --c98thPercentile                                         : Double 
+                          meanResponseTime                                          : Double
+                          responseGroupURL                                          : URL  -- Each response in the list has a common url  
+                        | latestTimeStamp      USE { max }   { error "empty list" } : Integer 
                           minResponseTime    USE { min }    { error "empty list" }  : Double 
-                          maxResponseTime   USE { max }   { error "empty list" }  : Double  
-                          responseTimeVector USE {V.cons} { V.empty }              : {V.Vector Double} 
+                          maxResponseTime   USE { max }   { error "empty list" }    : Double  
+                          responseTimeVector USE {V.cons} { V.empty }               : {V.Vector Double} 
                        ]                               
   
 SEM ResponseGroup
