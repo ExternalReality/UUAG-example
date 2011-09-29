@@ -1,0 +1,93 @@
+import
+{
+import qualified Data.List   as L
+import qualified Data.Map    as M
+import qualified Data.Vector as V
+import GHC.Exts
+import Network.URL
+import Statistics.Quantile
+import Statistics.Sample
+}
+
+{
+data ResponseMetric = ResponseMetric { 
+                                       responseUrl       :: URL,      --The URL that generated the response
+                                       timeInterval      :: Integer,  --The greatest time stamp in the interval 
+                                       responseMean      :: Double,   --The mean response time of interval
+                                       responseMin       :: Double,   --The min response time of interval
+                                       responseMax       :: Double   --The maximum response time of interval
+                                       --percentile80th  :: Double,   --The 80th percentile of the cumulative intervals
+                                       --percentile98th  :: Double    --The 98th percentile of the cumulative intervals
+                                     } deriving (Show) 
+}
+
+TYPE ResponseGroup                    = [Response]
+TYPE ResponsesGroupedByTimeInterval   = [ResponseGroup]
+TYPE ResponseGroupsMappedByURL        = MAP {URL} ResponsesGroupedByTimeInterval
+
+ATTR ResponseGroupsMappedByURL [ || responseMetrics USE 
+                                 { (\a b -> a.resultingMetricList ++ b.resultingMetricList } 
+                                 { [] } 
+                                 : {[ResponseMetric]} 
+                               ]
+
+SEM ResponseGroupsMappedByURL
+ | Entry val.responseMetricAccumulator     = []
+         val.vectorAccumulator             = V.empty 
+         val.responseGroupURL              = @key
+         lhs.responseMetrics               = @val.resultingMetricList 
+
+ATTR ResponsesGroupedByTimeInterval [ vectorAccumulator            : {V.Vector Double}
+                                      responseGroupURL             : {URL} |responseMetricAccumulator    : {[ResponseMetric]} | 
+                                      resultingMetricList          : {[ResponseMetric]} 
+                                    ]  
+    
+SEM ResponsesGroupedByTimeInterval
+  | Cons tl.responseMetricAccumulator = metric : @lhs.responseMetricAccumulator
+                                           where metric = ResponseMetric @hd.responseGroupURL
+                                                                         @hd.latestTimeStamp
+                                                                         @hd.meanResponseTime
+                                                                         @hd.minResponseTime
+                                                                         @hd.maxResponseTime
+                                                                        -- @hd.c80thPercentile
+                                                                        -- @hd.c98thPercentile
+       lhs.resultingMetricList = @tl.resultingMetricList 
+ | Nil lhs.resultingMetricList = @lhs.responseMetricAccumulator 
+                         
+
+SEM ResponsesGroupedByTimeInterval   -- Percentiles and mean calculation semantics 
+ | Cons --hd.c80thPercentile    = _80thPercentile @loc.vector
+        --hd.c98thPercentile    = _98thPercentile @loc.vector
+        hd.meanResponseTime   = mean @hd.responseTimeVector
+        tl.vectorAccumulator  = @loc.vector
+        loc.vector            = @lhs.vectorAccumulator V.++ @hd.responseTimeVector
+
+ATTR ResponseGroup [    | --c80thPercentile                                         : Double  
+                          --c98thPercentile                                         : Double 
+                          meanResponseTime                                          : Double
+                          responseGroupURL                                          : URL  -- Each response in the list has a common url  
+                        | latestTimeStamp      USE { max }   { error "empty list" } : Integer 
+                          minResponseTime    USE { min }    { error "empty list" }  : Double 
+                          maxResponseTime   USE { max }   { error "empty list" }    : Double  
+                          responseTimeVector USE {V.cons} { V.empty }               : {V.Vector Double} 
+                       ]                               
+  
+SEM ResponseGroup
+ | Cons lhs.minResponseTime    = responseTime @hd 
+        lhs.maxResponseTime    = responseTime @hd
+        lhs.latestTimeStamp    = timestamp    @hd
+        lhs.responseTimeVector = (V.singleton $ responseTime @hd)
+{  
+_80thPercentile = weightedAvg 80 100
+_98thPercentile = weightedAvg 98 100  
+  
+mapResponsesToUrl :: [Response] -> M.Map URL [Response]
+mapResponsesToUrl = foldr accumulateMap M.empty
+  where
+    accumulateMap response acc = M.insertWith' (++) (url response) [response] acc
+
+groupResponseMapByTimeInterval :: Integer -> M.Map URL [Response] -> M.Map URL [[Response]]
+groupResponseMapByTimeInterval interval = M.map (groupWith timestampGroupCriteria) 
+  where 
+    timestampGroupCriteria response  = (timestamp response) `quot` interval 
+        
